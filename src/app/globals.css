@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-outfit);
+  --font-display: var(--font-fraunces);
+  --color-paper: #f6f3ee;
+  --color-ink: #1c1917;
+  --color-brand: #4338ca;
+  --color-brand-soft: #eef2ff;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-outfit), sans-serif;
+}
+
+h1,
+h2,
+.font-display {
+  font-family: var(--font-fraunces), Georgia, serif;
+}
+
+::selection {
+  background: #fde68a;
+}
+
+input,
+textarea,
+select {
+  accent-color: #4338ca;
+}

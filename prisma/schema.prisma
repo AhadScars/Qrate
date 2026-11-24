@@ -1,0 +1,302 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id             String          @id @default(cuid())
+  email          String          @unique
+  passwordHash   String
+  name           String
+  role           String
+  phone          String?
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+  sessions       AuthSession[]
+  memberships    BusinessMember[]
+  passwordResets PasswordReset[]
+  auditLogs      AuditLog[]
+  ownedBusinesses Business[]     @relation("BusinessOwner")
+
+  @@index([role])
+}
+
+model AuthSession {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  userAgent String?
+  ip        String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Business {
+  id         String           @id @default(cuid())
+  ownerId    String
+  name       String
+  slug       String           @unique
+  email      String?
+  phone      String?
+  logoUrl    String?
+  status     String           @default("ACTIVE")
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  deletedAt  DateTime?
+  owner      User             @relation("BusinessOwner", fields: [ownerId], references: [id])
+  members    BusinessMember[]
+  places     Place[]
+  subscriptions Subscription[]
+  payments   Payment[]
+  trials     Trial[]
+
+  @@index([ownerId])
+  @@index([status])
+}
+
+model BusinessMember {
+  id         String   @id @default(cuid())
+  businessId String
+  userId     String
+  role       String   @default("OWNER")
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId])
+  @@index([userId])
+}
+
+model Category {
+  id             String              @id @default(cuid())
+  name           String              @unique
+  slug           String              @unique
+  description    String?
+  icon           String?
+  welcomeMessage String?
+  isActive       Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  attributes     CategoryAttribute[]
+  places         Place[]
+  templates      ReviewTemplate[]
+}
+
+model CategoryAttribute {
+  id            String   @id @default(cuid())
+  categoryId    String
+  key           String
+  label         String
+  labelHi       String
+  labelHinglish String
+  sortOrder     Int      @default(0)
+  isActive      Boolean  @default(true)
+  category      Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, key])
+  @@index([categoryId])
+}
+
+model Place {
+  id                 String    @id @default(cuid())
+  businessId         String
+  categoryId         String
+  name               String
+  googleBusinessName String?
+  address            String?
+  city               String?
+  googleMapsUrl      String?
+  googleReviewUrl    String?
+  logoUrl            String?
+  welcomeMessage     String?
+  isActive           Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+  business           Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category           Category  @relation(fields: [categoryId], references: [id])
+  qrCodes            QrCode[]
+  generations        ReviewGeneration[]
+
+  @@index([businessId])
+  @@index([categoryId])
+}
+
+model QrCode {
+  id          String             @id @default(cuid())
+  publicId    String             @unique
+  placeId     String
+  label       String?
+  fgColor     String             @default("#312e81")
+  bgColor     String             @default("#ffffff")
+  includeLogo Boolean            @default(false)
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  deletedAt   DateTime?
+  place       Place              @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  scans       QrScan[]
+  generations ReviewGeneration[]
+  events      ReviewEvent[]
+
+  @@index([placeId])
+  @@index([isActive])
+}
+
+model ReviewTemplate {
+  id         String   @id @default(cuid())
+  categoryId String
+  language   String
+  tone       String
+  length     String
+  ratingBand String
+  content    String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId, language, tone, length, ratingBand, isActive])
+}
+
+model ReviewGeneration {
+  id                 String   @id @default(cuid())
+  placeId            String
+  qrCodeId           String
+  selectedRating     Int
+  selectedAttributes String
+  generatedContent   String
+  language           String
+  tone               String
+  length             String
+  templateId         String?
+  createdAt          DateTime @default(now())
+  place              Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  qrCode             QrCode   @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
+
+  @@index([placeId, createdAt])
+  @@index([qrCodeId, createdAt])
+}
+
+model QrScan {
+  id         String   @id @default(cuid())
+  qrCodeId   String
+  visitorKey String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  qrCode     QrCode   @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
+
+  @@index([qrCodeId, createdAt])
+  @@index([qrCodeId, visitorKey])
+}
+
+model ReviewEvent {
+  id        String   @id @default(cuid())
+  qrCodeId  String
+  type      String
+  createdAt DateTime @default(now())
+  qrCode    QrCode   @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
+
+  @@index([qrCodeId, type, createdAt])
+  @@index([type, createdAt])
+}
+
+model Subscription {
+  id            String    @id @default(cuid())
+  businessId    String
+  planName      String
+  amountPaise   Int
+  currency      String    @default("INR")
+  status        String
+  startDate     DateTime?
+  endDate       DateTime?
+  trialStart    DateTime?
+  trialEnd      DateTime?
+  paymentStatus String    @default("UNPAID")
+  paymentRef    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  business      Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  payments      Payment[]
+
+  @@index([businessId, createdAt])
+  @@index([status])
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  businessId     String
+  subscriptionId String?
+  amountPaise    Int
+  currency       String        @default("INR")
+  status         String
+  provider       String        @default("MANUAL")
+  reference      String?
+  note           String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  business       Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@index([businessId, createdAt])
+  @@index([status])
+  @@index([reference])
+}
+
+model Trial {
+  id         String   @id @default(cuid())
+  businessId String
+  startDate  DateTime
+  endDate    DateTime
+  extendedBy Int      @default(0)
+  isDisabled Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+model AdminSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   String?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation(fields: [actorId], references: [id])
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@index([actorId])
+}
