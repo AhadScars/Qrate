@@ -17,7 +17,14 @@ export const SETTING_DEFAULTS = {
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
 export type SettingMap = Record<SettingKey, string>;
 
+let settingsCache: { at: number; settings: SettingMap } | null = null;
+
+export function clearSettingsCache() {
+  settingsCache = null;
+}
+
 export async function getSettings(): Promise<SettingMap> {
+  if (settingsCache && Date.now() - settingsCache.at < 60_000) return settingsCache.settings;
   const rows = await prisma.adminSetting.findMany();
   const settings = { ...SETTING_DEFAULTS } as SettingMap;
   for (const row of rows) {
@@ -25,6 +32,7 @@ export async function getSettings(): Promise<SettingMap> {
       settings[row.key as SettingKey] = row.value;
     }
   }
+  settingsCache = { at: Date.now(), settings };
   return settings;
 }
 

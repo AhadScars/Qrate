@@ -12,6 +12,8 @@ const fraunces = Fraunces({
   subsets: ["latin"],
 });
 
+export const preferredRegion = "bom1";
+
 export const metadata: Metadata = {
   title: "Qrate",
   description: "QR review drafts for local businesses. Customers edit the words and submit them on Google themselves.",
