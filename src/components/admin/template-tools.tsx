@@ -86,6 +86,7 @@ export function ImportTemplates() {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
   return (
     <form
       className="space-y-3"
@@ -93,22 +94,33 @@ export function ImportTemplates() {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
         const file = form.get("file");
-        if (!(file instanceof File)) return;
-        const result = await adminImportTemplatesAction(await file.text());
-        if (!result.ok) setError(result.error);
-        else {
-          setError("");
-          setMessage(`Imported ${result.count} templates.`);
-          router.refresh();
+        if (!(file instanceof File) || file.size === 0) {
+          setError("Choose a CSV file first.");
+          return;
+        }
+        setPending(true);
+        setError("");
+        setMessage("");
+        try {
+          const result = await adminImportTemplatesAction(await file.text());
+          if (!result.ok) setError(result.error);
+          else {
+            setMessage(`Imported ${result.count} templates.`);
+            router.refresh();
+          }
+        } catch {
+          setError("Import failed. The file may be too large, or the server did not finish saving it.");
+        } finally {
+          setPending(false);
         }
       }}
     >
-      <input name="file" type="file" accept=".csv,text/csv" />
+      <input name="file" type="file" accept=".csv,text/csv" disabled={pending} />
       <p className="text-xs text-stone-500">Header: categorySlug,language,tone,length,ratingBand,content,isActive</p>
       {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      <Button type="submit" variant="ghost">
-        Import CSV
+      <Button type="submit" variant="ghost" disabled={pending}>
+        {pending ? "Importing…" : "Import CSV"}
       </Button>
     </form>
   );

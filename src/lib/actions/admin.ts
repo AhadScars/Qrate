@@ -16,8 +16,8 @@ import {
   suspendBusiness,
   unsuspendBusiness,
 } from "@/services/subscriptions/service";
-import { canImportTemplates, LANGUAGES, LENGTHS, TONES, BANDS } from "@/services/reviews/patterns";
-import { parseCsv } from "@/lib/csv";
+import { canImportTemplates } from "@/services/reviews/patterns";
+import { parseTemplateCsv } from "@/services/reviews/import-templates";
 
 export async function adminActivateAction(input: unknown) {
   const admin = await requireAdmin();
@@ -164,44 +164,25 @@ export async function adminDeleteTemplateAction(templateId: string) {
 
 export async function adminImportTemplatesAction(csv: string) {
   const admin = await requireAdmin();
-  const table = parseCsv(csv);
-  const [header, ...body] = table;
-  if (!header) return { ok: false as const, error: "The CSV is empty." };
-  const expected = ["categorySlug", "language", "tone", "length", "ratingBand", "content", "isActive"];
-  if (expected.some((column, index) => header[index] !== column)) {
-    return { ok: false as const, error: `Header must be ${expected.join(",")}` };
-  }
+  const categories = await prisma.category.findMany({ select: { id: true, slug: true } });
+  const parsed = parseTemplateCsv(csv, categories);
+  if (!parsed.ok) return parsed;
   const existing = await prisma.reviewTemplate.count();
-  const room = canImportTemplates(existing, body.length);
+  const room = canImportTemplates(existing, parsed.rows.length);
   if (!room.ok) return room;
-  const categories = await prisma.category.findMany();
-  const bySlug = new Map(categories.map((category) => [category.slug, category.id]));
-  const rows = [];
-  for (const cells of body) {
-    const [categorySlug, language, tone, length, ratingBand, content, isActive] = cells;
-    const categoryId = bySlug.get(categorySlug || "");
-    if (!categoryId) return { ok: false as const, error: `Unknown category slug ${categorySlug}.` };
-    if (!LANGUAGES.includes(language as (typeof LANGUAGES)[number])) return { ok: false as const, error: `Bad language ${language}.` };
-    if (!TONES.includes(tone as (typeof TONES)[number])) return { ok: false as const, error: `Bad tone ${tone}.` };
-    if (!LENGTHS.includes(length as (typeof LENGTHS)[number])) return { ok: false as const, error: `Bad length ${length}.` };
-    if (!BANDS.includes(ratingBand as (typeof BANDS)[number])) return { ok: false as const, error: `Bad rating band ${ratingBand}.` };
-    if (!content?.includes("{business}") || !content.includes("{attributes}")) {
-      return { ok: false as const, error: "Every row needs {business} and {attributes}." };
+  const [{ now: startedAt }] = await prisma.$queryRaw<[{ now: Date }]>`SELECT clock_timestamp() AS now`;
+  try {
+    const batchSize = 400;
+    for (let index = 0; index < parsed.rows.length; index += batchSize) {
+      await prisma.reviewTemplate.createMany({ data: parsed.rows.slice(index, index + batchSize) });
     }
-    rows.push({
-      categoryId,
-      language,
-      tone,
-      length,
-      ratingBand,
-      content,
-      isActive: isActive !== "false" && isActive !== "0",
-    });
+  } catch {
+    await prisma.reviewTemplate.deleteMany({ where: { createdAt: { gte: startedAt } } });
+    return { ok: false as const, error: "The file was read, but saving it failed. Nothing new was kept." };
   }
-  await prisma.reviewTemplate.createMany({ data: rows });
-  await audit(admin.id, "template.import", "ReviewTemplate", null, { count: rows.length });
+  await audit(admin.id, "template.import", "ReviewTemplate", null, { count: parsed.rows.length });
   revalidatePath("/admin/review-templates");
-  return { ok: true as const, count: rows.length };
+  return { ok: true as const, count: parsed.rows.length };
 }
 
 export async function adminSaveSettingsAction(input: unknown) {

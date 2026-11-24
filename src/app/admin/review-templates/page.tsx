@@ -6,6 +6,7 @@ import { DeleteTemplateButton } from "@/components/admin/small-actions";
 import { ImportTemplates, TemplateForm } from "@/components/admin/template-tools";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { Pager } from "@/components/ui/pager";
+import { TEMPLATE_CAP } from "@/services/reviews/patterns";
 
 export const instant = false;
 
@@ -26,7 +27,7 @@ export default async function TemplatesPage({
     <div>
       <PageHeader
         title="Review templates"
-        body={`${stored} stored patterns, capped at 10,000. These are sentence patterns, not fake testimonials.`}
+        body={`${stored} stored patterns, capped at ${TEMPLATE_CAP.toLocaleString("en-IN")}.`}
         action={
           <Link href="/api/admin/templates/export" className="rounded-full bg-white px-4 py-2 text-sm font-semibold ring-1 ring-stone-200">
             Export CSV

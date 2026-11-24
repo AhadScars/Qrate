@@ -7,6 +7,10 @@ const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
+  experimental: {
+    serverActions: { bodySizeLimit: "12mb" },
+    proxyClientMaxBodySize: "12mb",
+  },
   serverExternalPackages: ["bcryptjs", "qrcode"],
   async headers() {
     return [

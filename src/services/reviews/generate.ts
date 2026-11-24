@@ -66,16 +66,21 @@ export function composeReview(input: DraftInput): DraftResult {
   };
 
   const excluded = new Set(input.excludeTemplateIds ?? []);
+  const attributesSelected = usedLabels.length > 0;
   const pool = input.templates.filter((template) => {
-    if (!template.content.includes("{business}") || !template.content.includes("{rating}")) return false;
-    if (usedLabels.length > 0 && !template.content.includes("{attributes}")) return false;
     if (excluded.has(template.id)) return false;
-    return (
-      template.language === input.language &&
-      template.tone === input.tone &&
-      template.length === input.length &&
-      template.ratingBand === band
-    );
+    if (
+      template.language !== input.language ||
+      template.tone !== input.tone ||
+      template.length !== input.length ||
+      template.ratingBand !== band
+    ) {
+      return false;
+    }
+    const source = reviewSource(template.content, attributesSelected);
+    if (!source.includes("{business}")) return false;
+    if (attributesSelected && !template.content.includes("{attributes}")) return false;
+    return true;
   });
 
   const ordered = pool.length
@@ -83,7 +88,7 @@ export function composeReview(input: DraftInput): DraftResult {
     : [];
 
   for (const template of ordered) {
-    const text = fillPattern(template.content, values);
+    const text = fillPattern(reviewSource(template.content, attributesSelected), values);
     if (isHonest(text, usedLabels, forbidden, values.attributes)) {
       return { text, templateId: template.id, usedKeys: selected.map((item) => item.key), usedLabels };
     }
@@ -108,6 +113,15 @@ export function composeReview(input: DraftInput): DraftResult {
   };
 }
 
+function reviewSource(content: string, attributesSelected: boolean) {
+  if (attributesSelected) return content;
+  return content
+    .split(/(?<=[.!?।])\s+/)
+    .filter((sentence) => !sentence.includes("{attributes}"))
+    .join(" ")
+    .trim();
+}
+
 function rotate<T>(items: T[], seed: number) {
   if (items.length === 0) return items;
   const start = seed % items.length;
@@ -119,9 +133,11 @@ function isHonest(text: string, usedLabels: string[], forbidden: string[], attri
   for (const label of usedLabels) {
     if (!lower.includes(label.toLowerCase())) return false;
   }
-  const remainder = text.split(attributePhrase).join(" ").toLowerCase();
-  for (const label of forbidden) {
-    if (label && remainder.includes(label.toLowerCase())) return false;
+  if (usedLabels.length > 0 && attributePhrase) {
+    const remainder = text.split(attributePhrase).join(" ").toLowerCase();
+    for (const label of forbidden) {
+      if (label && remainder.includes(label.toLowerCase())) return false;
+    }
   }
   if (text.includes("{")) return false;
   return text.length > 0 && text.length <= 1200;

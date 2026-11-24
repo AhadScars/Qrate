@@ -4,6 +4,7 @@ import { safeJoin } from "@/lib/security/paths";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { bucketScans } from "@/services/analytics/series";
 import { composeReview } from "@/services/reviews/generate";
+import { parseTemplateCsv } from "@/services/reviews/import-templates";
 import { canImportTemplates } from "@/services/reviews/patterns";
 import { evaluateAccess } from "@/services/subscriptions/access";
 
@@ -109,6 +110,37 @@ describe("review drafts", () => {
     expect(second.templateId).not.toBe(first.templateId);
     expect(second.text.toLowerCase()).toContain("pricing");
   });
+
+  it("uses a saved review that has no rating token and drops the attribute sentence", () => {
+    const draft = composeReview({
+      businessName: "Abdul Ahad Enterprises",
+      categoryName: "Restaurant",
+      rating: 3,
+      attributes,
+      selectedKeys: [],
+      language: "en",
+      tone: "natural",
+      length: "short",
+      templates: [
+        {
+          id: "saved",
+          language: "en",
+          tone: "natural",
+          length: "short",
+          ratingBand: "mid",
+          content:
+            "{business} was okay, a mix of good and not so good. The {attributes} were okay, nothing special. Decent option for a good lunch.",
+        },
+      ],
+      seed: 1,
+    });
+    expect(draft.templateId).toBe("saved");
+    expect(draft.text).toContain("Abdul Ahad Enterprises");
+    expect(draft.text).toContain("Decent option for a good lunch.");
+    expect(draft.text).not.toContain("{");
+    expect(draft.text.toLowerCase()).not.toContain("overall visit");
+    expect(draft.text.toLowerCase()).not.toContain("food quality");
+  });
 });
 
 describe("subscription access", () => {
@@ -185,9 +217,24 @@ describe("subscription access", () => {
 });
 
 describe("guards and helpers", () => {
-  it("caps template imports at 10000", () => {
-    expect(canImportTemplates(9990, 20).ok).toBe(false);
+  it("caps template imports at 20000", () => {
+    expect(canImportTemplates(19990, 20).ok).toBe(false);
+    expect(canImportTemplates(0, 11232).ok).toBe(true);
     expect(canImportTemplates(10, 20).ok).toBe(true);
+  });
+
+  it("reads a template csv row with commas inside the review", () => {
+    const csv = [
+      "categorySlug,language,tone,length,ratingBand,content,isActive",
+      'restaurant,en,natural,short,mid,"{business} was okay, a mix of good and not so good. The {attributes} were okay.",true',
+    ].join("\n");
+    const parsed = parseTemplateCsv(csv, [{ id: "cat-restaurant", slug: "restaurant" }]);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0]?.categoryId).toBe("cat-restaurant");
+    expect(parsed.rows[0]?.content).toContain("{business}");
+    expect(parsed.rows[0]?.isActive).toBe(true);
   });
 
   it("buckets scans without dropping empty days", () => {

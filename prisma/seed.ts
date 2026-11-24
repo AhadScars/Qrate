@@ -1,7 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { catalog } from "./catalog";
-import { BANDS, buildPattern, LANGUAGES, LENGTHS, TONES } from "../src/services/reviews/patterns";
 import { SETTING_DEFAULTS } from "../src/lib/config/settings";
 
 const prisma = new PrismaClient();
@@ -68,43 +67,7 @@ async function main() {
   }
 
   const templateCount = await prisma.reviewTemplate.count();
-  if (templateCount === 0) {
-    const categories = await prisma.category.findMany();
-    const rows: {
-      categoryId: string;
-      language: string;
-      tone: string;
-      length: string;
-      ratingBand: string;
-      content: string;
-    }[] = [];
-    for (const category of categories) {
-      for (const language of LANGUAGES) {
-        for (const tone of TONES) {
-          for (const length of LENGTHS) {
-            for (const band of BANDS) {
-              for (const variant of [0, 1] as const) {
-                rows.push({
-                  categoryId: category.id,
-                  language,
-                  tone,
-                  length,
-                  ratingBand: band,
-                  content: buildPattern({ language, tone, length, band, variant }),
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-    for (let index = 0; index < rows.length; index += 500) {
-      await prisma.reviewTemplate.createMany({ data: rows.slice(index, index + 500) });
-    }
-    console.log(`Seeded ${rows.length} review patterns.`);
-  } else {
-    console.log(`Kept ${templateCount} existing review templates.`);
-  }
+  console.log(`Kept ${templateCount} review templates. Import new ones from the admin page.`);
 
   console.log(`Admin ready: ${admin.email}`);
 }

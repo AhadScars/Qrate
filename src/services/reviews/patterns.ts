@@ -146,7 +146,7 @@ export function fillPattern(pattern: string, values: Record<string, string>) {
   return pattern.replace(/\{([a-z_]+)\}/g, (_, key: string) => values[key] ?? "").replace(/\s+/g, " ").trim();
 }
 
-export const TEMPLATE_CAP = 10000;
+export const TEMPLATE_CAP = 20000;
 
 export function canImportTemplates(existing: number, incoming: number, cap = TEMPLATE_CAP) {
   if (incoming < 1) return { ok: false as const, error: "The file has no template rows." };
