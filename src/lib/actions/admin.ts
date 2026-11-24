@@ -6,7 +6,7 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { audit } from "@/lib/audit";
 import { activateSchema, adminQrSchema, categorySchema, extendSchema, settingsSchema, templateSchema, zodError } from "@/lib/validation/schemas";
 import { deleteIssuedQr, issueAdminQr } from "@/services/places/service";
-import { clearSettingsCache, SETTING_DEFAULTS } from "@/lib/config/settings";
+import { SETTING_DEFAULTS } from "@/lib/config/settings";
 import { slugify } from "@/lib/utils";
 import {
   activatePaidPlan,
@@ -216,7 +216,6 @@ export async function adminSaveSettingsAction(input: unknown) {
       create: { key, value: String(value) },
     });
   }
-  clearSettingsCache();
   await audit(admin.id, "settings.save", "AdminSetting", "platform");
   revalidatePath("/admin/settings");
   revalidatePath("/pricing");

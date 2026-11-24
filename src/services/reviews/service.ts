@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import { isDirectReviewUrl, resolveGoogleReviewUrl } from "@/lib/qr/google-review";
 import { composeReview } from "@/services/reviews/generate";
 import type { ReviewLanguage, ReviewLength, ReviewTone } from "@/services/reviews/patterns";
-import { evaluateAccess } from "@/services/subscriptions/access";
+import { getBusinessAccess } from "@/services/subscriptions/service";
 
 const VISITOR_COOKIE = "qrate_visitor";
 
@@ -12,12 +12,7 @@ export async function loadPublicQr(publicId: string) {
     include: {
       place: {
         include: {
-          business: {
-            include: {
-              subscriptions: { orderBy: { createdAt: "desc" }, take: 1 },
-              trials: { orderBy: { createdAt: "desc" }, take: 1 },
-            },
-          },
+          business: true,
           category: { include: { attributes: { where: { isActive: true }, orderBy: { sortOrder: "asc" } } } },
         },
       },
@@ -26,21 +21,7 @@ export async function loadPublicQr(publicId: string) {
   if (!qr || qr.deletedAt || !qr.isActive || !qr.place.isActive || qr.place.deletedAt || qr.place.business.deletedAt) {
     return { ok: false as const, reason: "missing" as const };
   }
-  const subscription = qr.place.business.subscriptions[0] ?? null;
-  const trial = qr.place.business.trials[0] ?? null;
-  const access = evaluateAccess({
-    now: new Date(),
-    businessStatus: qr.place.business.status,
-    trial: trial ? { endDate: trial.endDate, isDisabled: trial.isDisabled } : null,
-    subscription: subscription
-      ? {
-          status: subscription.status,
-          endDate: subscription.endDate,
-          trialEnd: subscription.trialEnd,
-          paymentStatus: subscription.paymentStatus,
-        }
-      : null,
-  });
+  const access = await getBusinessAccess(qr.place.businessId);
   if (!access.allowed) return { ok: false as const, reason: "paused" as const, name: qr.place.business.name };
   const reviewUrl = qr.place.googleReviewUrl;
   if (reviewUrl && !isDirectReviewUrl(reviewUrl)) {
@@ -113,22 +94,20 @@ export async function generatePublicDraft(input: {
     seed: Date.now(),
     excludeTemplateIds: input.excludeTemplateId ? [input.excludeTemplateId] : [],
   });
-  const [saved] = await prisma.$transaction([
-    prisma.reviewGeneration.create({
-      data: {
-        placeId: loaded.qr.placeId,
-        qrCodeId: loaded.qr.id,
-        selectedRating: input.rating,
-        selectedAttributes: JSON.stringify(draft.usedKeys),
-        generatedContent: draft.text,
-        language: input.language,
-        tone: input.tone,
-        length: input.length,
-        templateId: draft.templateId,
-      },
-    }),
-    prisma.reviewEvent.create({ data: { qrCodeId: loaded.qr.id, type: "GENERATE" } }),
-  ]);
+  const saved = await prisma.reviewGeneration.create({
+    data: {
+      placeId: loaded.qr.placeId,
+      qrCodeId: loaded.qr.id,
+      selectedRating: input.rating,
+      selectedAttributes: JSON.stringify(draft.usedKeys),
+      generatedContent: draft.text,
+      language: input.language,
+      tone: input.tone,
+      length: input.length,
+      templateId: draft.templateId,
+    },
+  });
+  await prisma.reviewEvent.create({ data: { qrCodeId: loaded.qr.id, type: "GENERATE" } });
   return {
     ok: true as const,
     text: draft.text,
