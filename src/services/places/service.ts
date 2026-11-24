@@ -3,7 +3,7 @@ import { customAlphabet } from "nanoid";
 import { prisma } from "@/lib/db/prisma";
 import { audit } from "@/lib/audit";
 import { planFromSettings, getSettings } from "@/lib/config/settings";
-import { isDirectReviewUrl, placeIdFromInput, reviewUrlFromPlaceId } from "@/lib/qr/google-review";
+import { isDirectReviewUrl, resolveGoogleReviewUrl } from "@/lib/qr/google-review";
 import { slugify } from "@/lib/utils";
 import { getBusinessAccess } from "@/services/subscriptions/service";
 
@@ -24,10 +24,10 @@ export async function issueAdminQr(input: {
   if (!category) return { ok: false as const, error: "Choose a valid category." };
 
   const placeName = input.placeName?.trim() || input.businessName;
-  const placeId = placeIdFromInput(input.googleReviewUrl);
-  if (!placeId) return { ok: false as const, error: "Enter only the Google Place ID. It starts with ChIJ." };
-  const googleReviewUrl = reviewUrlFromPlaceId(placeId);
-  if (!isDirectReviewUrl(googleReviewUrl)) return { ok: false as const, error: "That Place ID could not be turned into a Google review link." };
+  const googleReviewUrl = await resolveGoogleReviewUrl(input.googleReviewUrl);
+  if (!isDirectReviewUrl(googleReviewUrl)) {
+    return { ok: false as const, error: "Could not turn that link into a Google review form. Paste the Maps share link again." };
+  }
   const business = await prisma.business.create({
     data: {
       ownerId: input.actorId,

@@ -59,8 +59,8 @@ export function AdminQrForm({ categories }: { categories: { id: string; name: st
         <Field label="Address">
           <TextInput name="address" placeholder="12 Mall Road" />
         </Field>
-        <Field label="Google Place ID" hint="Paste only the Place ID, for example ChIJxxxx. A Maps link is not used.">
-          <TextInput name="googleReviewUrl" required placeholder="ChIJxXLVIAdHnDkR4EKXYUF0QVY" pattern="ChIJ[A-Za-z0-9_-]{10,120}" />
+        <Field label="Google Maps link" hint="Paste the share link, like https://maps.app.goo.gl/... Customers still open our page first. Continue to Google opens the review form.">
+          <TextInput name="googleReviewUrl" required placeholder="https://maps.app.goo.gl/..." />
         </Field>
       </div>
       <Field label="Welcome line">

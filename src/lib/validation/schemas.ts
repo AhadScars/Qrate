@@ -34,7 +34,9 @@ export const adminQrSchema = z.object({
   googleReviewUrl: z
     .string()
     .trim()
-    .regex(/^ChIJ[A-Za-z0-9_-]{10,120}$/, "Enter only the Google Place ID. It starts with ChIJ."),
+    .min(8)
+    .max(500)
+    .refine((value) => /^ChIJ[A-Za-z0-9_-]{10,120}$/.test(value) || /^https:\/\/(?:maps\.app\.goo\.gl|goo\.gl|g\.page|maps\.google\.com|www\.google\.com|google\.com|search\.google\.com)\//i.test(value), "Paste a Google Maps share link, like https://maps.app.goo.gl/..., or a Place ID that starts with ChIJ."),
   welcomeMessage: z.string().trim().max(280).optional().or(z.literal("")),
 });
 
