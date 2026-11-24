@@ -31,6 +31,7 @@ export function ReviewDesk({
   const [text, setText] = useState("");
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [thinking, setThinking] = useState("");
@@ -48,13 +49,15 @@ export function ReviewDesk({
     setBusy(true);
     setError("");
     setMessage("");
+    setCopied(false);
     const steps = ["Reading your stars", "Matching the tone", "Writing your review"];
+    const thinkMs = 2000;
     let step = 0;
     setThinking(steps[0]);
     const timer = window.setInterval(() => {
-      step = Math.min(step + 1, steps.length - 1);
-      setThinking(steps[step]);
-    }, 700);
+      step += 1;
+      if (step < steps.length) setThinking(steps[step]);
+    }, thinkMs / steps.length);
     const started = Date.now();
     try {
       const result = await generateDraftAction({
@@ -67,7 +70,7 @@ export function ReviewDesk({
         excludeTemplateId: templateId ?? "",
         companyWebsite: "",
       });
-      const remaining = 2100 - (Date.now() - started);
+      const remaining = thinkMs - (Date.now() - started);
       if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
       if (!result.ok) {
         setError(result.error);
@@ -86,27 +89,32 @@ export function ReviewDesk({
 
   async function copyText() {
     if (!text.trim()) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      await trackReviewAction(publicId, "COPY");
-      setMessage("Copied. Paste it yourself if you decide to post.");
-    } catch {
-      setMessage("Copy was blocked by the browser. Select the text and copy it manually.");
+    const result = copyReview(text);
+    const modernOk = result.modern ? await result.modern.then(() => true).catch(() => false) : false;
+    if (modernOk || result.synced) {
+      void trackReviewAction(publicId, "COPY");
+      setCopied(true);
+      setMessage("Review copied");
+      return;
     }
+    setCopied(false);
+    setMessage("Copy was blocked by the browser. Select the text and copy it manually.");
   }
 
-  async function openGoogle() {
-    if (!text.trim() || !googleReviewUrl) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      await trackReviewAction(publicId, "COPY");
-      await trackReviewAction(publicId, "GOOGLE_CLICK");
-      setMessage("Copied. Google will open so you can paste and submit the review yourself.");
-    } catch {
-      await trackReviewAction(publicId, "GOOGLE_CLICK");
-      setMessage("Google will open. Copy the review first, then paste it yourself.");
+  function openGoogle() {
+    if (text.trim()) {
+      const result = copyReview(text);
+      setCopied(true);
+      setMessage("Review copied. Paste it on Google.");
+      void result.modern?.catch(() => {
+        if (!result.synced) {
+          setCopied(false);
+          setMessage("Copy was blocked. Select the review and copy it, then paste on Google.");
+        }
+      });
+      void trackReviewAction(publicId, "COPY");
     }
-    window.open(googleReviewUrl, "_blank", "noopener,noreferrer");
+    void trackReviewAction(publicId, "GOOGLE_CLICK");
   }
 
   const showLogo = Boolean(logoUrl) && !logoFailed;
@@ -190,19 +198,22 @@ export function ReviewDesk({
         {!busy && text ? (
           <div className="mt-3 grid gap-2">
             <button type="button" onClick={() => void copyText()} className="flex h-10 items-center justify-center gap-2 rounded-full bg-indigo-700 text-sm font-semibold text-white">
-              <Copy size={15} /> Copy review
+              {copied ? <Check size={15} /> : <Copy size={15} />} {copied ? "Review copied" : "Copy review"}
             </button>
             <button type="button" onClick={() => void generate()} disabled={busy} className="flex h-10 items-center justify-center gap-2 rounded-full bg-stone-100 text-sm font-semibold disabled:opacity-60">
               <RefreshCw size={15} /> Another variation
             </button>
-            <button
-              type="button"
-              disabled={!googleReviewUrl}
-              onClick={() => void openGoogle()}
-              className="flex h-10 items-center justify-center gap-2 rounded-full bg-amber-400 text-sm font-semibold text-stone-950 disabled:opacity-50"
-            >
-              <ExternalLink size={16} /> Continue to Google Reviews
-            </button>
+            {googleReviewUrl ? (
+              <a
+                href={googleReviewUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={openGoogle}
+                className="flex h-10 items-center justify-center gap-2 rounded-full bg-amber-400 text-sm font-semibold text-stone-950"
+              >
+                <ExternalLink size={16} /> Continue to Google Reviews
+              </a>
+            ) : null}
             {!googleReviewUrl ? <p className="text-center text-xs text-stone-500">This location has not added a Google review link yet.</p> : null}
           </div>
         ) : null}
@@ -218,6 +229,28 @@ export function ReviewDesk({
 
 const selectClass =
   "h-9 w-full min-w-0 rounded-xl border border-stone-200 bg-white px-1.5 text-[11px] text-stone-800 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100";
+
+function copyReview(value: string) {
+  let synced = false;
+  const area = document.createElement("textarea");
+  area.value = value;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.top = "0";
+  area.style.left = "0";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.focus();
+  area.select();
+  try {
+    synced = document.execCommand("copy");
+  } catch {
+    synced = false;
+  }
+  area.remove();
+  const modern = navigator.clipboard?.writeText(value);
+  return { synced, modern };
+}
 
 function placeInitials(name: string) {
   const letters = name
