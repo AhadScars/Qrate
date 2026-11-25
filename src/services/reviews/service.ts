@@ -62,6 +62,7 @@ export async function generatePublicDraft(input: {
   tone: ReviewTone;
   length: ReviewLength;
   excludeTemplateId?: string;
+  avoidText?: string;
 }) {
   const loaded = await loadPublicQr(input.publicId);
   if (!loaded.ok) {
@@ -93,6 +94,8 @@ export async function generatePublicDraft(input: {
     templates,
     seed: Date.now(),
     excludeTemplateIds: input.excludeTemplateId ? [input.excludeTemplateId] : [],
+    city: loaded.qr.place.city,
+    avoidText: input.avoidText,
   });
   const saved = await prisma.reviewGeneration.create({
     data: {

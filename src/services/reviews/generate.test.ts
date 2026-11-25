@@ -141,6 +141,129 @@ describe("review drafts", () => {
     expect(draft.text.toLowerCase()).not.toContain("overall visit");
     expect(draft.text.toLowerCase()).not.toContain("food quality");
   });
+
+  it("closes a good review with the category and city", () => {
+    const saved = {
+      id: "saved",
+      language: "en" as const,
+      tone: "natural" as const,
+      length: "short" as const,
+      ratingBand: "high",
+      content: "Had a good visit at {business}. The {attributes} stood out. I would go back.",
+    };
+    const base = {
+      businessName: "Ak Cafe",
+      categoryName: "Cafe",
+      rating: 5,
+      attributes,
+      selectedKeys: [] as string[],
+      language: "en" as const,
+      tone: "natural" as const,
+      length: "short" as const,
+      templates: [saved],
+      seed: 1,
+      city: "Kanpur",
+    };
+    const classic = composeReview({ ...base, seed: 0 });
+    expect(classic.text).toContain("A good cafe in Kanpur.");
+
+    const cafe = composeReview(base);
+    expect(cafe.text).toContain("Had a good visit at Ak Cafe.");
+    expect(cafe.text).toContain("A cafe in Kanpur I would visit again.");
+    expect(cafe.text).not.toContain("Old Hospital Road");
+
+    const school = composeReview({ ...base, categoryName: "School" });
+    expect(school.text).toContain("A school in Kanpur I would visit again.");
+
+    const other = composeReview({ ...base, categoryName: "Other" });
+    expect(other.text).toContain("A place in Kanpur I would visit again.");
+    expect(other.text.toLowerCase()).not.toContain("other");
+
+    const quiet = composeReview({ ...base, rating: 2 });
+    expect(quiet.text).toContain("I would skip this cafe in Kanpur.");
+    expect(quiet.text).not.toContain("A good cafe");
+
+    const hindi = composeReview({ ...base, language: "hi", templates: [] });
+    expect(hindi.text).toContain("Kanpur में इस cafe पर दोबारा जाना चाहूँगा।");
+  });
+
+  it("skips stock sentences that were just used", () => {
+    const laptop = {
+      id: "laptop",
+      language: "en" as const,
+      tone: "natural" as const,
+      length: "short" as const,
+      ratingBand: "high",
+      content: "Glad I tried {business}. The snacks were fresh and tasty. My go-to place for working on a laptop now.",
+    };
+    const fresh = {
+      id: "fresh",
+      language: "en" as const,
+      tone: "natural" as const,
+      length: "short" as const,
+      ratingBand: "high",
+      content: "Glad I tried {business}. The staff remembered my usual order. I stopped by after office.",
+    };
+    const shared = {
+      businessName: "Ak Cafe",
+      categoryName: "Cafe",
+      rating: 5,
+      attributes,
+      selectedKeys: [] as string[],
+      language: "en" as const,
+      tone: "natural" as const,
+      length: "short" as const,
+      templates: [laptop, fresh],
+      seed: 0,
+      city: "Kanpur",
+    };
+    const first = composeReview(shared);
+    expect(first.templateId).toBe("laptop");
+    expect(first.text.toLowerCase()).toContain("working on a laptop");
+    expect(first.text).toContain("A good cafe in Kanpur.");
+
+    const second = composeReview({
+      ...shared,
+      avoidText: first.text,
+      excludeTemplateIds: first.templateId ? [first.templateId] : [],
+    });
+    expect(second.templateId).toBe("fresh");
+    expect(second.text.toLowerCase()).not.toContain("laptop");
+    expect(second.text).not.toContain("The snacks were fresh and tasty.");
+    expect(second.text).not.toContain("A good cafe in Kanpur.");
+    expect(second.text).toContain("The staff remembered my usual order.");
+    expect(second.text).toContain("A cafe in Kanpur I would visit again.");
+    expect(second.text).toContain("Glad I tried Ak Cafe.");
+  });
+
+  it("drops a repeated line when every saved template uses it", () => {
+    const draft = composeReview({
+      businessName: "Ak Cafe",
+      categoryName: "Cafe",
+      rating: 5,
+      attributes,
+      selectedKeys: [],
+      language: "en",
+      tone: "natural",
+      length: "short",
+      templates: [
+        {
+          id: "laptop",
+          language: "en",
+          tone: "natural",
+          length: "short",
+          ratingBand: "high",
+          content: "Had a good visit at {business}. My go-to place for working on a laptop now.",
+        },
+      ],
+      seed: 1,
+      city: "Kanpur",
+      avoidText: "Had a good visit at Ak Cafe. My go-to place for working on a laptop now.",
+    });
+    expect(draft.templateId).toBeNull();
+    expect(draft.text.toLowerCase()).not.toContain("laptop");
+    expect(draft.text).toContain("Ak Cafe");
+  });
 });
 
 describe("subscription access", () => {

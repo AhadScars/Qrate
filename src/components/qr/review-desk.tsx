@@ -68,6 +68,7 @@ export function ReviewDesk({
         tone,
         length,
         excludeTemplateId: templateId ?? "",
+        avoidText: text.slice(0, 4000),
         companyWebsite: "",
       });
       const remaining = thinkMs - (Date.now() - started);

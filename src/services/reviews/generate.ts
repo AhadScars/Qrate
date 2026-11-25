@@ -39,6 +39,8 @@ export type DraftInput = {
   templates: DraftTemplate[];
   seed: number;
   excludeTemplateIds?: string[];
+  city?: string | null;
+  avoidText?: string;
 };
 
 export type DraftResult = {
@@ -66,6 +68,7 @@ export function composeReview(input: DraftInput): DraftResult {
   };
 
   const excluded = new Set(input.excludeTemplateIds ?? []);
+  const banned = stockSentences(input.avoidText ?? "", input.businessName, values.attributes);
   const attributesSelected = usedLabels.length > 0;
   const pool = input.templates.filter((template) => {
     if (excluded.has(template.id)) return false;
@@ -87,30 +90,239 @@ export function composeReview(input: DraftInput): DraftResult {
     ? rotate(pool, Math.abs(input.seed))
     : [];
 
+  let best: { text: string; templateId: string; overlap: number } | null = null;
   for (const template of ordered) {
     const text = fillPattern(reviewSource(template.content, attributesSelected), values);
-    if (isHonest(text, usedLabels, forbidden, values.attributes)) {
-      return { text, templateId: template.id, usedKeys: selected.map((item) => item.key), usedLabels };
+    if (!isHonest(text, usedLabels, forbidden, values.attributes)) continue;
+    const overlap = stockOverlap(text, banned, input.businessName, values.attributes);
+    if (overlap === 0) return finish(text, template.id);
+    if (!best || overlap < best.overlap) best = { text, templateId: template.id, overlap };
+  }
+
+  const preferred = Math.abs(input.seed) % 2 === 0 ? 0 : 1;
+  const variants = [preferred, preferred === 0 ? 1 : 0] as const;
+  let fallback = "";
+  for (const variant of variants) {
+    const text = fillPattern(
+      buildPattern({
+        language: input.language,
+        tone: input.tone,
+        length: input.length,
+        band: band as RatingBand,
+        variant,
+      }),
+      values,
+    );
+    if (!fallback) fallback = text;
+    if (stockOverlap(text, banned, input.businessName, values.attributes) === 0) {
+      return finish(text, null);
     }
   }
 
-  const fallback = fillPattern(
-    buildPattern({
-      language: input.language,
-      tone: input.tone,
-      length: input.length,
-      band: band as RatingBand,
-      variant: Math.abs(input.seed) % 2 === 0 ? 0 : 1,
-    }),
-    values,
-  );
+  if (best) return finish(best.text, best.templateId);
+  return finish(fallback, null);
 
-  return {
-    text: fallback,
-    templateId: null,
-    usedKeys: selected.map((item) => item.key),
-    usedLabels,
-  };
+  function finish(text: string, templateId: string | null): DraftResult {
+    return {
+      text: withPlaceLocation(
+        text,
+        input.city,
+        input.categoryName,
+        input.language,
+        input.rating,
+        input.seed,
+        banned,
+        input.avoidText ?? "",
+      ),
+      templateId,
+      usedKeys: selected.map((item) => item.key),
+      usedLabels,
+    };
+  }
+}
+
+const GENERIC_CATEGORIES = new Set(["other", "others", "general", "misc", "miscellaneous", "business", "place"]);
+
+function withPlaceLocation(
+  text: string,
+  city: string | null | undefined,
+  categoryName: string,
+  language: ReviewLanguage,
+  rating: number,
+  seed: number,
+  banned: Set<string>,
+  avoidText: string,
+) {
+  const cleanCity = (city ?? "").replace(/\s+/g, " ").trim();
+  const category = spokenCategory(categoryName, language);
+  if (!cleanCity || !category) return text;
+  const options = categoryCityLines(language, rating, category, cleanCity);
+  const lower = text.toLowerCase();
+  if (options.some((line) => lower.includes(normalizeSentence(line)))) return text;
+  const previous = avoidText.toLowerCase();
+  const fresh = options.filter((line) => {
+    const spoken = normalizeSentence(line);
+    return !banned.has(spoken) && !previous.includes(spoken);
+  });
+  const pool = fresh.length ? fresh : options;
+  const line = pool[Math.abs(seed) % pool.length];
+  return `${text} ${line}`.replace(/\s+/g, " ").trim();
+}
+
+function spokenCategory(categoryName: string, language: ReviewLanguage) {
+  const category = categoryName.replace(/\s+/g, " ").trim().toLowerCase();
+  if (!category || !GENERIC_CATEGORIES.has(category)) return category;
+  if (language === "hi") return "जगह";
+  return "place";
+}
+
+function categoryCityLines(language: ReviewLanguage, rating: number, category: string, city: string) {
+  const a = article(category);
+  const A = capitalize(a);
+  if (language === "hi") {
+    if (rating >= 4) {
+      return [
+        `${city} में ${category} का अनुभव अच्छा रहा।`,
+        `${city} में इस ${category} पर दोबारा जाना चाहूँगा।`,
+        `${city} में ${category} का समय अच्छा बीता।`,
+        `${city} में यह ${category} सुझाव के लायक है।`,
+        `${city} में ${category} पसंद आया।`,
+      ];
+    }
+    if (rating === 3) {
+      return [
+        `${city} में ${category} का अनुभव औसत रहा।`,
+        `${city} में ${category} ठीक-ठाक रहा।`,
+        `${city} में यह ${category} न अच्छा न बुरा।`,
+        `${city} में ${category} का समय साधारण रहा।`,
+        `${city} में ${category} औसत ही रहा।`,
+      ];
+    }
+    return [
+      `${city} में ${category} का अनुभव अच्छा नहीं रहा।`,
+      `${city} में इस ${category} पर दोबारा नहीं जाना चाहूँगा।`,
+      `${city} में ${category} निराश कर गया।`,
+      `${city} में यह ${category} सुझाव के लायक नहीं है।`,
+      `${city} में ${category} कमज़ोर रहा।`,
+    ];
+  }
+  if (language === "hinglish") {
+    if (rating >= 4) {
+      return [
+        `${city} mein ${category} ka experience accha raha.`,
+        `${city} mein is ${category} par dobara aana chahta hoon.`,
+        `${city} mein ${category} ka time accha guzra.`,
+        `${city} mein yeh ${category} suggest karunga.`,
+        `${city} ka yeh ${category} pasand aaya.`,
+      ];
+    }
+    if (rating === 3) {
+      return [
+        `${city} mein ${category} ka experience average raha.`,
+        `${city} mein ${category} theek-thaak raha.`,
+        `${city} mein yeh ${category} na accha na bura.`,
+        `${city} mein ${category} ka time sadharan raha.`,
+        `${city} mein ${category} average hi raha.`,
+      ];
+    }
+    return [
+      `${city} mein ${category} ka experience accha nahi raha.`,
+      `${city} mein is ${category} par dobara nahi aana chahta.`,
+      `${city} mein ${category} nirash kar gaya.`,
+      `${city} mein yeh ${category} suggest nahi karunga.`,
+      `${city} mein ${category} weak raha.`,
+    ];
+  }
+  if (rating >= 4) {
+    return [
+      `A good ${category} in ${city}.`,
+      `${A} ${category} in ${city} I would visit again.`,
+      `Happy with this ${category} in ${city}.`,
+      `${A} ${category} in ${city} I would recommend.`,
+      `Worth another visit to this ${category} in ${city}.`,
+    ];
+  }
+  if (rating === 3) {
+    return [
+      `An average ${category} in ${city}.`,
+      `An okay ${category} in ${city}.`,
+      `A middling ${category} in ${city}.`,
+      `This ${category} in ${city} was just fine.`,
+      `Not bad for ${a} ${category} in ${city}, not great either.`,
+    ];
+  }
+  return [
+    `Not the ${category} I would pick in ${city}.`,
+    `I would skip this ${category} in ${city}.`,
+    `Not ${a} ${category} I would recommend in ${city}.`,
+    `A disappointing ${category} in ${city}.`,
+    `I expected more from this ${category} in ${city}.`,
+  ];
+}
+
+function article(word: string) {
+  return /^[aeiou]/i.test(word) ? "an" : "a";
+}
+
+function capitalize(word: string) {
+  return word ? word.charAt(0).toUpperCase() + word.slice(1) : word;
+}
+
+function stockSentences(text: string, businessName: string, attributePhrase: string) {
+  const banned = new Set<string>();
+  for (const sentence of splitSentences(text)) {
+    if (!isStockSentence(sentence, businessName, attributePhrase)) continue;
+    banned.add(normalizeSentence(sentence));
+  }
+  return banned;
+}
+
+function stockOverlap(text: string, banned: Set<string>, businessName: string, attributePhrase: string) {
+  if (banned.size === 0) return 0;
+  let overlap = 0;
+  for (const sentence of splitSentences(text)) {
+    if (!isStockSentence(sentence, businessName, attributePhrase)) continue;
+    if (banned.has(normalizeSentence(sentence))) overlap += 1;
+  }
+  return overlap;
+}
+
+function splitSentences(text: string) {
+  return text
+    .split(/(?<=[.!?।])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function normalizeSentence(sentence: string) {
+  return sentence
+    .toLowerCase()
+    .replace(/[.!?।]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isStockSentence(sentence: string, businessName: string, attributePhrase: string) {
+  if (mentions(sentence, businessName)) return false;
+  if (mentions(sentence, attributePhrase)) return false;
+  return normalizeSentence(sentence).length >= 8;
+}
+
+function mentions(text: string, phrase: string) {
+  const needle = phrase.trim().toLowerCase();
+  if (needle.length < 2) return false;
+  const hay = text.toLowerCase();
+  let from = 0;
+  while (from <= hay.length - needle.length) {
+    const at = hay.indexOf(needle, from);
+    if (at < 0) return false;
+    const before = at === 0 || /[^\p{L}\p{N}]/u.test(hay[at - 1] ?? "");
+    const afterAt = at + needle.length;
+    const after = afterAt >= hay.length || /[^\p{L}\p{N}]/u.test(hay[afterAt] ?? "");
+    if (before && after) return true;
+    from = at + 1;
+  }
+  return false;
 }
 
 function reviewSource(content: string, attributesSelected: boolean) {

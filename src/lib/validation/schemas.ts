@@ -67,6 +67,7 @@ export const generateSchema = z.object({
   tone: z.enum(["natural", "professional", "friendly", "simple"]),
   length: z.enum(["short", "medium", "detailed"]),
   excludeTemplateId: z.string().optional().or(z.literal("")),
+  avoidText: z.string().max(4000).optional(),
   companyWebsite: z.string().max(0).optional().or(z.literal("")),
 });
 
